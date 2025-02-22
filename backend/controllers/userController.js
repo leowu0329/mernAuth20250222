@@ -13,8 +13,25 @@ const registerUser = asyncHandler(async (req, res) => {
   const userExists = await User.findOne({ email });
 
   if (userExists) {
+    if (!userExists.isVerified) {
+      const verificationToken = crypto.randomBytes(20).toString('hex');
+      userExists.verificationToken = verificationToken;
+      await userExists.save();
+
+      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+
+      await sendEmail({
+        email: userExists.email,
+        subject: '請驗證您的電子郵件',
+        message: `請點擊以下連結驗證您的電子郵件：${verificationUrl}`,
+      });
+
+      res.status(400);
+      throw new Error('此信箱已註冊但尚未驗證，新的驗證郵件已發送，請查收');
+    }
+
     res.status(400);
-    throw new Error('用戶已存在');
+    throw new Error('此信箱已註冊');
   }
 
   const verificationToken = crypto.randomBytes(20).toString('hex');
@@ -179,18 +196,42 @@ const getUserProfile = asyncHandler(async (req, res) => {
 // @route   GET /api/users/verify/:token
 // @access  Public
 const verifyEmail = asyncHandler(async (req, res) => {
-  const user = await User.findOne({ verificationToken: req.params.token });
+  // 先檢查是否已經驗證過
+  const verifiedUser = await User.findOne({
+    isVerified: true,
+    $or: [
+      { verificationToken: req.params.token },
+      { _id: { $exists: true } }, // 這會匹配所有文檔
+    ],
+  });
+
+  if (verifiedUser) {
+    return res.json({
+      message: '郵件驗證成功',
+      alreadyVerified: true,
+    });
+  }
+
+  // 尋找未驗證的用戶
+  const user = await User.findOne({
+    verificationToken: req.params.token,
+    isVerified: false,
+  });
 
   if (!user) {
     res.status(400);
     throw new Error('無效的驗證令牌');
   }
 
+  // 進行驗證
   user.isVerified = true;
   user.verificationToken = undefined;
   await user.save();
 
-  res.json({ message: '郵件驗證成功' });
+  res.json({
+    message: '郵件驗證成功',
+    alreadyVerified: false,
+  });
 });
 
 export {

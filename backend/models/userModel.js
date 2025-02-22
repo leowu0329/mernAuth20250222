@@ -20,7 +20,10 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    verificationToken: String,
+    verificationToken: {
+      type: String,
+      required: false,
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
